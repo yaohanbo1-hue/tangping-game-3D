@@ -20,6 +20,8 @@
     "verify:step5": "node ui-review-3d/verify-step5.cjs",
     "verify:video": "node ui-review-3d/verify-video.cjs",
     "verify:mobile": "node ui-review-3d/verify-mobile.cjs",
+    "probe:gameplay": "node ui-review-3d/probe-gameplay.cjs",
+    "probe:occlusion": "node ui-review-3d/probe-occlusion.cjs",
     "verify:dist": "node scripts/verify-dist.cjs",
     "verify": "npm run verify:world && npm run verify:sim && npm run verify:imports && npm run verify:rules && npm run verify:combat && npm run verify:pacing && npm run verify:ending",
     "verify:all": "npm run check:media && npm run verify && npm run verify:step4 && npm run verify:step5 && npm run verify:video && npm run verify:mobile"

@@ -102,11 +102,15 @@ const QUALITY_COOLDOWN_FRAMES = 90;  // 换档后冷却 90 帧
 
 /**
  * 正交相机的可视高度（世界单位）。
- * 场地是 12.8 × 7.2 m，55° 俯视后 Z 方向会投影成 7.2*sin(55°) ≈ 5.9 m 高。
- * 取 8.6 是为了给 HUD 留出上下留白 —— 之前用 8.2 时，房间最右列
- * （床所在的第 8 列）在 16:9 下会被裁掉一点。
+ * 场地是 12.8 × 7.2 m，相机俯视后 Z 方向会投影成 7.2*sin(CAM_ELEV) m 高。
+ *
+ * ⚠️ 这个值必须跟着 CAM_ELEV 一起调：
+ *    旧的 8.6 是配 55° 仰角算的（投影高 5.90m，留白 31%）。
+ *    仰角降到 38° 后投影高变成 7.2*sin(38°) ≈ 4.43m，若仍用 8.6
+ *    就会上下各空出 24% —— 场地缩成中间一条，比原来更小更扁。
+ *    这里按「投影高 + 上下留白」重算：4.43 * 1.30 ≈ 5.76，取 5.8。
  */
-const VIEW_H = 8.6;
+const VIEW_H = 5.8;
 /**
  * 视口在**屏幕垂直方向**上抬的比例（0.5 = 正中，0 = 贴底，1 = 贴顶）。
  *
@@ -119,8 +123,23 @@ const VIEW_H = 8.6;
  * （建造栏约 140px 高且贴底 44px，实测需要 ~40% 以上的下缘留白）。
  */
 const VIEW_BIAS_Y = 0.425;
-/** 相机仰角（弧度）：55° 俯视，能看见地块侧面但不会太扁。 */
-const CAM_ELEV = THREE.MathUtils.degToRad(55);
+/**
+ * 相机仰角（弧度）：38° 斜视。
+ *
+ * ⚠️ 这里踩过一次大坑，写清楚别再犯：
+ *   原来定的是 55°，结果整个 3D 版「看起来就是 2D」。原因是算术性的 ——
+ *   屏幕垂直方向的压缩系数 = sin(elev)，55° 时是 0.819，接近正俯视：
+ *     · 场地投影 12.8 × 5.90m，宽高比 2.17:1（2D 是 1.78:1，同一量级）
+ *     · 单格投影 1.10 × 0.80m，宽高比 1.37（2D 是 1.12，肉眼分不出）
+ *     · 外墙 0.9m 高，可见侧面仅 0.52m = 单格宽的 47%，撑不起立体感
+ *   降到 38° 后压缩系数 0.616：
+ *     · 场地投影 12.8 × 4.43m，宽高比 2.89:1 —— 一眼看出来是斜视
+ *     · 单格投影 1.10 × 0.60m，宽高比 1.82 —— 明显比 2D 修长
+ *     · 外墙可见侧面 0.71m = 单格宽的 65%，侧面真正立起来了
+ *   下限提醒：低于 ~30° 会开始出现遮挡（前排格子挡住后排格子的内容），
+ *   塔防需要全格可见，所以不要为了「更 3D」一路压到 20°。
+ */
+const CAM_ELEV = THREE.MathUtils.degToRad(38);
 /**
  * 相机方位角（弧度）。
  *
@@ -144,7 +163,7 @@ export function createStage({ canvas, onResize } = {}) {
     alpha: false,
     powerPreference: 'high-performance',
   });
-  renderer.setClearColor(0x0a0c14, 1);
+  renderer.setClearColor(0x0f0a1c, 1);
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
@@ -169,7 +188,7 @@ export function createStage({ canvas, onResize } = {}) {
   let shadowType = shadowsEnabled ? THREE.PCFSoftShadowMap : THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x0a0c14, 16, 34);
+  scene.fog = new THREE.Fog(0x0f0a1c, 16, 34);
 
   // 相机看向场地中心（略微往房间侧偏一点，因为房间是主战场）
   const target = new THREE.Vector3(WORLD_W * LOOK_BIAS_X, 0, WORLD_D * 0.5);
@@ -226,10 +245,12 @@ export function createStage({ canvas, onResize } = {}) {
   }
 
   // ── 灯光：一盏主光投影 + 一盏补光提亮暗部 + 一点环境色 ──
-  const ambient = new THREE.AmbientLight(0x5a6a8a, 1.1);
+  // 色相向 2D 版的霓虹紫靠拢：环境光偏紫、主光偏冷白、补光用高饱和紫，
+  // 这样场地的暗部会呈现 2D 那种「紫夜」而不是「蓝灰」。
+  const ambient = new THREE.AmbientLight(0x6a5a8a, 1.1);
   scene.add(ambient);
 
-  const key = new THREE.DirectionalLight(0xbcd2ff, 1.5);
+  const key = new THREE.DirectionalLight(0xd6ccff, 1.5);
   key.position.set(-6, 14, -8);
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.left = -12;
