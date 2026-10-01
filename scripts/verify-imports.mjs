@@ -183,7 +183,27 @@ if (pxFieldUse) {
 // 只有「奖励都结算了」才会红。所以除了行为断言（verify-pacing 的 G 组），
 // 再加一道**源码文本**断言：这几个名字不许以「全局探测」形式出现。
 {
-  const STORY = path.join(__dirname, '..', '..', 'tangping-game', 'src', 'story');
+  // 叙事包的位置随仓库形态而变：
+  //   · 开发工作目录：与 2D 工程平级，包在 ../tangping-game/src/story
+  //   · 独立发布仓库：包被复制进 ./packages/story
+  // 两个都找，找到哪个用哪个。
+  const STORY_CANDIDATES = [
+    path.join(__dirname, '..', 'packages', 'story'),
+    path.join(__dirname, '..', '..', 'tangping-game', 'src', 'story'),
+  ];
+  const STORY = STORY_CANDIDATES.find((p) => fs.existsSync(p)) || null;
+
+  // ⚠️ 找不到就**报错**，不要静默跳过。
+  //    这条边界抓到过 11 处真漏改，是本套件里最有价值的一条。
+  //    早先它写成 `if (fs.existsSync(STORY)) { ... }` —— 路径一变，
+  //    整段检查就悄悄不执行了，而套件仍然打印「架构边界检查通过」。
+  //    一个会静默跳过的检查比没有检查更糟：它让人以为验过了。
+  if (!STORY) {
+    problems.push('[边界6] 找不到叙事包目录，无法执行全局探测检查 —— '
+      + '试过：' + STORY_CANDIDATES.join(' / ')
+      + '。请确认 packages/story 存在（或 2D 工程在场）。');
+  }
+
   // 只允许出现在 host.js 里（那是给 2D 回落用的 makeGlobalHost，
   // 它**本来**就是要读 globalThis 的兼容层）。
   const ALLOW = new Set(['host.js']);
@@ -192,9 +212,11 @@ if (pxFieldUse) {
     'showStoryDialog', 'applyStoryEffect', 'pushDreamToast',
     'DreamDiary', 'DreamFragments', 'LetterSystem', 'QuestSystem',
   ];
-  if (fs.existsSync(STORY)) {
+  if (STORY) {
+    let scanned = 0;
     for (const name of fs.readdirSync(STORY)) {
       if (!name.endsWith('.js') || ALLOW.has(name)) continue;
+      scanned++;
       const raw = fs.readFileSync(path.join(STORY, name), 'utf8');
       const code = raw
         .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -208,6 +230,11 @@ if (pxFieldUse) {
         }
       }
     }
+    // 扫到 0 个文件也说明路径不对 —— 同样要报出来，不能"0 个问题"就绿
+    if (scanned === 0) {
+      problems.push(`[边界6] 叙事包目录里没有可扫描的 .js：${STORY}`);
+    }
+    console.log(`── 边界6：已扫描叙事包 ${scanned} 个文件（${path.relative(path.join(__dirname, '..'), STORY)}）──`);
   }
 }
 

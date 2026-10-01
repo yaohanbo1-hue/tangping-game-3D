@@ -44,7 +44,25 @@ import { fileURLToPath } from 'node:url';
 import { ENDING_DEFS, ENDING_TONES, createEndingSystem } from '../src/ending.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ── 这是一个**跨工程**一致性校验 ─────────────────────────
+//
+// 它把 3D 的结局定义（rank / tone / 全部文本字段 / 色调表 / 判定行为）
+// 与 2D 引擎里那一份逐字段对拍，所以需要 2D 工程的源码在场。
+//
+// 在只含 3D 的仓库里（比如发布仓库）那份源码不存在。这时**明确跳过**：
+//   · 不要崩 —— 会让 CI 红在一个"本来就不适用"的检查上
+//   · 也不要假装通过 —— 那会让人以为结局一致性被验证过了
+// 所以打一条显眼的 SKIP，并说明为什么。
 const ENG = path.join(__dirname, '..', '..', 'tangping-game', 'src', 'engine', 'vendor-engine.js');
+if (!fs.existsSync(ENG)) {
+  console.log('⚠️  跳过：找不到 2D 引擎参考文件');
+  console.log('   ' + ENG);
+  console.log('   本套件做的是**跨工程一致性**校验（3D 结局定义 vs 2D 引擎那份逐字段对拍），');
+  console.log('   需要 2D 工程与 3D 工程并排放置。只含 3D 的仓库里这是预期行为，不是失败。');
+  console.log('   ⇒ 本次运行**没有**验证结局一致性。');
+  process.exit(0);
+}
 const eng = fs.readFileSync(ENG, 'utf8');
 
 // ══════════════════════════════════════════════════════════
