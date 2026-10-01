@@ -1,0 +1,24 @@
+# 依赖与构建产物
+node_modules/
+dist/
+.vite/
+
+# Vite 每次启动都会在根目录丢一个 vite.config.mjs.timestamp-*.mjs
+*.timestamp-*.mjs
+
+# 验收脚本自动生成的截图（可随时重跑生成，不入库）
+# 想让 README 有图，请放 docs/screenshots/ 下的精选截图
+ui-review-3d/*.png
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+
+# ⚠️ 不要忽略 public/assets/story/*.mp4
+#    那 6 条剧情镜头视频是**要发布出去的**。
+#    早先 3D 工程的 .gitignore 里有这条规则，会导致 Pages 上线一个
+#    「没有剧情镜头但也不报错」的版本 —— 静默降级是最难发现的一类失败。
+#    scripts/check-story-media.cjs 专门守这个。

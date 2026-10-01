@@ -1,0 +1,34 @@
+{
+  "name": "tangping-game-3d",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "《躺平发育：梦魇防线》3D 版 —— 正交相机 + XZ 平面网格的浏览器塔防。Three.js + Vite。",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check:media": "node scripts/check-story-media.cjs",
+    "verify:world": "node scripts/verify-world.mjs",
+    "verify:sim": "node scripts/verify-sim.mjs",
+    "verify:imports": "node scripts/verify-imports.mjs",
+    "verify:rules": "node scripts/verify-rules.mjs",
+    "verify:combat": "node scripts/verify-combat.mjs",
+    "verify:pacing": "node scripts/verify-pacing.mjs",
+    "verify:ending": "node scripts/verify-ending.mjs",
+    "verify:step4": "node ui-review-3d/verify-step4.cjs",
+    "verify:step5": "node ui-review-3d/verify-step5.cjs",
+    "verify:video": "node ui-review-3d/verify-video.cjs",
+    "verify:mobile": "node ui-review-3d/verify-mobile.cjs",
+    "verify:dist": "node scripts/verify-dist.cjs",
+    "verify": "npm run verify:world && npm run verify:sim && npm run verify:imports && npm run verify:rules && npm run verify:combat && npm run verify:pacing && npm run verify:ending",
+    "verify:all": "npm run check:media && npm run verify && npm run verify:step4 && npm run verify:step5 && npm run verify:video && npm run verify:mobile"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "@tangping/story": "file:./packages/story",
+    "three": "^0.169.0"
+  }
+}

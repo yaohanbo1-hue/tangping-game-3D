@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="game-version" content="3D-0.3.0-step6" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0c14'/%3E%3Cpath d='M6 22h20v3H6z' fill='%237fdfff'/%3E%3Cpath d='M9 13h6v6H9z' fill='%23a97bff'/%3E%3Cpath d='M18 9h6v10h-6z' fill='%236ee7a8'/%3E%3C/svg%3E" />
+<title>躺平发育：梦魇防线 3D</title>
+<style>
+  :root {
+    --bg: #080a10;
+    --panel: rgba(16, 21, 34, 0.86);
+    --panel-solid: rgba(13, 17, 28, 0.96);
+    --border: rgba(90, 120, 180, 0.28);
+    --text: #dce6f7;
+    --muted: #8296b8;
+    --accent: #7fdfff;
+    --accent2: #a97bff;
+    --ok: #6ee7a8;
+    --bad: #ff6b81;
+    --gold: #ffd166;
+    --danger: #ff5d5d;
+    --font: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    /* 安全区（iPhone 刘海 / 灵动岛 / 圆角 / 底部横条）。
+       非刘海设备与桌面端 env() 求值为 0px，因此引用它们是零副作用。 */
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; height: 100dvh;   /* dvh 让地址栏收展时高度不跳变（不支持时回退 100%） */
+    overflow: hidden;
+    background: var(--bg); color: var(--text); font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+    overscroll-behavior: none;      /* 关掉下拉刷新 / 橡皮筋 */
+    -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  }
+  #scene {
+    display: block;
+    width: 100vw; height: 100vh; height: 100dvh;
+    cursor: crosshair;
+    touch-action: none;             /* 画布上的拖动不触发页面滚动/缩放 */
+  }
+
+  #hud {
+    position: fixed; inset: 0; pointer-events: none;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 14px 16px;
+  }
+  /* 顶栏与底栏之间放一个「弹簧」，把内容真正顶到上下两端
+     （建造栏已经 position:fixed 到屏幕底部，不参与这个 flex 流） */
+  .hud-spacer { flex: 1 1 auto; }
+
+  /* ══ 顶栏 ══ */
+  .hud-bar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 9px 15px;
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+  }
+  .hud-title { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 14.5px; letter-spacing: .3px; white-space: nowrap; }
+  .hud-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 10px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  .hud-stats { display: flex; gap: 7px; flex-wrap: wrap; }
+  .hud-stat {
+    font-size: 12.5px; font-variant-numeric: tabular-nums;
+    color: var(--muted); background: rgba(127, 223, 255, 0.07);
+    border: 1px solid rgba(127, 223, 255, 0.16);
+    border-radius: 7px; padding: 4px 10px; white-space: nowrap;
+  }
+  .hud-stat--wave { color: var(--accent2); border-color: rgba(169,123,255,.3); background: rgba(169,123,255,.1); font-weight: 600; }
+  .hud-stat--gold { color: var(--gold); border-color: rgba(255,209,102,.28); background: rgba(255,209,102,.08); }
+  .hud-stat--power { color: #8ecbff; }
+  .hud-stat--soul { color: #c77dff; border-color: rgba(199,125,255,.28); background: rgba(199,125,255,.08); }
+  .hud-stat--bed { color: var(--ok); }
+  .hud-stat--fps { opacity: .6; }
+
+  .hud-controls { display: flex; gap: 7px; margin-left: auto; }
+  .hud-btn {
+    font-family: inherit; font-size: 12.5px; font-weight: 500;
+    color: var(--text); background: rgba(90, 120, 180, 0.16);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 13px; cursor: pointer; transition: all .15s ease;
+    white-space: nowrap;
+  }
+  .hud-btn:hover:not(:disabled) { background: rgba(127, 223, 255, 0.18); border-color: var(--accent); }
+  .hud-btn:active:not(:disabled) { transform: translateY(1px); }
+  .hud-btn:disabled { opacity: .4; cursor: default; }
+  .hud-btn--primary {
+    background: linear-gradient(135deg, rgba(127,223,255,.22), rgba(169,123,255,.22));
+    border-color: rgba(127, 223, 255, 0.42);
+  }
+  .hud-btn--danger { border-color: rgba(255,93,93,.4); color: #ffb3b3; }
+  .hud-btn--danger:hover { background: rgba(255,93,93,.18); border-color: var(--danger); }
+
+  /* ── 第 5 步新增的四个控件 ── */
+
+  /* 速度：非 1× 时点亮，让「我现在是 2 倍速」这件事在余光里可见 */
+  .hud-btn--speed {
+    min-width: 46px; text-align: center;
+    font-variant-numeric: tabular-nums; font-weight: 600;
+  }
+  .hud-btn--speed.on {
+    color: var(--gold); border-color: rgba(255,209,102,.45);
+    background: rgba(255,209,102,.14);
+  }
+
+  /* 音效：关掉时整体压暗，图标本身已经换了（🔊/🔇） */
+  .hud-btn--sound { min-width: 40px; text-align: center; padding: 6px 8px; font-size: 13px; }
+  .hud-btn--sound.muted { color: var(--muted); opacity: .7; }
+
+  /* 重开：按第一次进入「武装」态（红框），3 秒后自动解除。
+     这是防误触 —— 一局打到第 40 波时误点重开是灾难。 */
+  .hud-btn.armed {
+    background: rgba(255,93,93,.22) !important;
+    border-color: var(--danger) !important;
+    color: #ffd0d0 !important;
+    animation: armedPulse 1s ease-in-out infinite;
+  }
+  @keyframes armedPulse { 0%,100% { opacity: 1; } 50% { opacity: .62; } }
+
+  /* ══ 建造栏 ══
+     ⚠️ 底部固定定位，**不能**靠 #hud 的 flex space-between 居中 ——
+     那样它会落在屏幕正中，直接盖住战场（第一版就踩了这个坑）。 */
+  .hud-buildbar {
+    position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px 10px;
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+    max-width: min(1180px, 94vw);
+  }
+  .build-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    min-width: 62px; padding: 5px 7px;
+    font-family: inherit; font-size: 10.5px; color: var(--muted);
+    background: rgba(90, 120, 180, 0.12);
+    border: 1px solid var(--border); border-radius: 9px;
+    cursor: pointer; transition: all .13s ease;
+  }
+  .build-btn:hover { background: rgba(127, 223, 255, 0.15); transform: translateY(-2px); }
+  .build-btn.on {
+    background: linear-gradient(160deg, rgba(127,223,255,.3), rgba(169,123,255,.3));
+    border-color: var(--accent); color: var(--text);
+    box-shadow: 0 0 14px rgba(127,223,255,.35);
+  }
+  .build-btn.poor { opacity: .38; }
+  .build-ic { font-size: 17px; line-height: 1.15; }
+  .build-nm { font-weight: 500; white-space: nowrap; }
+  .build-cost { font-variant-numeric: tabular-nums; opacity: .85; }
+
+  /* ══ 选中面板 ══ */
+  .hud-panel {
+    position: fixed; right: 16px; top: 74px; width: 224px;
+    background: var(--panel-solid); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 11px; padding: 11px 13px;
+    backdrop-filter: blur(12px);
+    pointer-events: auto; font-size: 12px;
+  }
+  .panel-title { font-weight: 600; font-size: 13.5px; margin-bottom: 7px; }
+  .panel-stat { color: var(--muted); line-height: 1.55; margin-bottom: 4px; }
+  .panel-hp { color: var(--ok); font-variant-numeric: tabular-nums; margin-bottom: 9px; }
+  .panel-acts { display: flex; flex-direction: column; gap: 5px; }
+  .panel-acts .hud-btn { width: 100%; text-align: center; padding: 6px 8px; font-size: 12px; }
+
+  /* ══ 提示条 ══ */
+  .hud-toast {
+    position: fixed; left: 50%; bottom: 152px; transform: translate(-50%, 12px);
+    background: var(--panel-solid); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 20px;
+    font-size: 13px; font-weight: 500;
+    opacity: 0; transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none; backdrop-filter: blur(12px);
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hud-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ══ 底栏 ══ */
+  .hud-footer { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
+  .hud-footer span {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; color: var(--muted);
+    align-self: flex-start; backdrop-filter: blur(10px);
+    max-width: min(760px, 92vw);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #story-state { margin-left: 0; }
+
+  /* 存档提示：默认占 0 高度（不挤动上面的行），有内容时才出现。
+     自动存档每 5 秒一次，所以它必须是「不打扰」的存在 ——
+     用 footer 里的一行小字，而不是 toast。 */
+  .hud-save {
+    display: none;
+    font-variant-numeric: tabular-nums;
+    color: rgba(110,231,168,.72) !important;
+    border-color: rgba(110,231,168,.2) !important;
+    background: rgba(110,231,168,.05) !important;
+  }
+  .hud-save.on { display: block; }
+
+  .ok { color: var(--ok) !important; border-color: rgba(110, 231, 168, 0.3) !important; }
+  .bad { color: var(--bad) !important; border-color: rgba(255, 107, 129, 0.35) !important; }
+
+  /* ══════════════════════════════════════════════════════════
+     叙事演出层（story-ui.js）
+     ══════════════════════════════════════════════════════════
+     与战斗 HUD 分开：这些是「弹出来、要求玩家读、然后消失」的元素，
+     有自己的生命周期（对话会暂停游戏，幕卡是纯演出）。 */
+
+  /* ── 幕卡 ── */
+  .su-act {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(8,10,16,.86) 0%, rgba(8,10,16,.97) 70%);
+    opacity: 0; transition: opacity .6s ease;
+  }
+  .su-act.on { opacity: 1; }
+  .su-act-label {
+    font-size: 15px; letter-spacing: 6px; color: var(--accent2);
+    text-transform: uppercase; text-shadow: 0 0 20px rgba(169,123,255,.7);
+  }
+  .su-act-title {
+    font-size: 42px; font-weight: 700; letter-spacing: 3px;
+    color: #eef4ff; text-shadow: 0 2px 30px rgba(127,223,255,.4);
+  }
+  .su-act-q {
+    margin-top: 6px; font-size: 15px; color: var(--muted);
+    border-top: 1px solid var(--border); padding-top: 12px;
+    letter-spacing: 1px; text-align: center; max-width: 640px; line-height: 1.7;
+  }
+
+  /* ── 对话框 ── */
+  .su-dialog {
+    position: fixed; inset: 0; z-index: 70;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: 0 16px 34px; pointer-events: none;
+    background: linear-gradient(to top, rgba(6,8,13,.9) 0%, rgba(6,8,13,.4) 40%, transparent 70%);
+    opacity: 0; transition: opacity .28s ease;
+  }
+  .su-dialog.on { opacity: 1; pointer-events: auto; }
+  .su-box {
+    width: min(760px, 94vw); max-height: 52vh; overflow-y: auto;
+    background: var(--panel-solid); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 13px; padding: 16px 20px 14px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 12px 44px rgba(0,0,0,.6);
+    cursor: pointer;
+  }
+  .su-kind {
+    display: inline-block; font-size: 11px; letter-spacing: 1.5px;
+    padding: 2px 9px; border-radius: 5px; margin-bottom: 9px;
+    background: rgba(127,223,255,.14); color: var(--accent);
+    border: 1px solid rgba(127,223,255,.28);
+  }
+  .su-kind--side { background: rgba(110,231,168,.14); color: var(--ok); border-color: rgba(110,231,168,.3); }
+  .su-kind--event { background: rgba(255,209,102,.14); color: var(--gold); border-color: rgba(255,209,102,.3); }
+  .su-kind--perspective { background: rgba(169,123,255,.16); color: var(--accent2); border-color: rgba(169,123,255,.32); }
+  .su-kind--boss { background: rgba(255,93,93,.16); color: #ff8f8f; border-color: rgba(255,93,93,.34); }
+  .su-who { font-size: 14.5px; font-weight: 600; color: var(--accent2); margin-bottom: 7px; letter-spacing: .5px; }
+  .su-text { font-size: 15px; line-height: 1.85; color: var(--text); white-space: pre-wrap; }
+  .su-hint { margin-top: 11px; font-size: 12px; color: var(--muted); opacity: .75; text-align: right; animation: suBlink 1.8s ease-in-out infinite; }
+  @keyframes suBlink { 0%,100% { opacity: .75; } 50% { opacity: .3; } }
+
+  .su-choices { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+  .su-choice {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+    font-family: inherit; text-align: left; cursor: pointer;
+    background: rgba(90,120,180,.14); border: 1px solid var(--border);
+    border-radius: 9px; padding: 9px 13px; transition: all .14s ease;
+  }
+  .su-choice:hover {
+    background: rgba(127,223,255,.18); border-color: var(--accent);
+    transform: translateX(3px);
+  }
+  .su-choice-t { font-size: 13.5px; color: var(--text); }
+  .su-choice-e { font-size: 11.5px; color: var(--gold); opacity: .9; }
+
+  /* ── 剧情镜头（视频 / 首帧静帧）──
+     设计意图：镜头不是"又一个弹窗"，而是**背景层**。
+     对话框贴在底部，镜头在上方占据剩余的视觉空间 —— 玩家的眼睛
+     在「画面」和「文字」之间移动，而不是被两个卡片夹在中间。
+
+     层级：镜头 60 < 对话框 70 < 面板 80。
+     所以对话框永远压在镜头上方（文字必须可读），而镜头不能被对话框盖住上半部分。 */
+  .su-media {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 24px 24px 190px;   /* 下方留出对话框的高度 */
+    pointer-events: none;
+    opacity: 0; transition: opacity .5s ease;
+  }
+  .su-media.on { opacity: 1; }
+  .su-media-stage {
+    position: relative;
+    width: min(880px, 86vw);
+    aspect-ratio: 16 / 9;                  /* 容器先占位，避免素材到达时跳动 */
+    max-height: 52vh;
+    border-radius: 14px; overflow: hidden;
+    background: #05070c;
+    border: 1px solid var(--border);
+    box-shadow: 0 22px 70px rgba(0,0,0,.72), 0 0 0 1px rgba(127,223,255,.06);
+  }
+  /* 两层叠在一起做交叉淡入：新层淡入的同时旧层淡出 */
+  .su-media-layer {
+    position: absolute; inset: 0;
+    opacity: 0;
+    transition: opacity .6s ease;
+    will-change: opacity;
+  }
+  .su-media-layer > * {
+    width: 100%; height: 100%; display: block;
+    object-fit: contain;                   /* 默认完整画面；.su-media[data-fit="cover"] 可改 */
+  }
+  .su-media[data-fit="cover"] .su-media-layer > * { object-fit: cover; }
+  /* 首帧静帧压在视频下面：视频没出画时，玩家看到的是这张构图 */
+  .su-media-img { position: absolute; inset: 0; z-index: 0; }
+  .su-media-video { position: relative; z-index: 1; background: transparent; }
+  .su-media-cap {
+    font-size: 12.5px; letter-spacing: 1.6px; color: var(--muted);
+    text-transform: none; opacity: .85; text-align: center;
+    text-shadow: 0 2px 12px rgba(0,0,0,.8);
+  }
+
+  /* ── 演出 toast ── */
+  .su-toasts {
+    position: fixed; top: 70px; right: 16px; z-index: 55;
+    display: flex; flex-direction: column; gap: 7px; align-items: flex-end;
+    pointer-events: none;
+  }
+  .su-toast {
+    min-width: 190px; max-width: min(320px, 60vw);
+    background: var(--panel-solid); border: 1px solid var(--border);
+    border-left: 3px solid var(--gold);
+    border-radius: 9px; padding: 8px 13px;
+    opacity: 0; transform: translateX(20px);
+    transition: opacity .28s ease, transform .28s ease;
+    backdrop-filter: blur(10px);
+  }
+  .su-toast.on { opacity: 1; transform: translateX(0); }
+  .su-toast.green { border-left-color: var(--ok); }
+  .su-toast.red { border-left-color: var(--bad); }
+  .su-toast.blue { border-left-color: var(--accent); }
+  .su-toast-t { font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .su-toast-b { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+
+  /* ── 日记 / 设定集面板 ──
+     结构：一个居中的 flex 容器，head + body 拼成一张卡片。
+     （两者共用同宽、各自带圆角，所以看起来是一张卡而不是两块。） */
+  .su-panel {
+    position: fixed; inset: 0; z-index: 80;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(6,8,13,.72); backdrop-filter: blur(6px);
+    padding: 26px;
+  }
+  .su-panel-head, .su-panel-body {
+    width: min(880px, 92vw);
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+  }
+  .su-panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    border-radius: 13px 13px 0 0;
+    padding: 14px 20px 11px;
+  }
+  .su-panel-body {
+    border-radius: 0 0 13px 13px; border-top: none;
+    padding: 16px 20px 20px;
+    max-height: 68vh; overflow-y: auto;
+  }
+  .su-panel-title { font-size: 16px; font-weight: 600; letter-spacing: 1px; }
+  .su-panel-close {
+    font-family: inherit; font-size: 14px; color: var(--muted);
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 7px; width: 30px; height: 26px; cursor: pointer;
+    transition: all .14s ease;
+  }
+  .su-panel-close:hover { color: var(--bad); border-color: var(--bad); }
+
+  .su-sec { margin-bottom: 18px; }
+  .su-sec-h {
+    font-size: 12.5px; font-weight: 600; color: var(--accent);
+    letter-spacing: 1px; margin-bottom: 9px;
+    padding-bottom: 5px; border-bottom: 1px dashed var(--border);
+  }
+  .su-chapter {
+    background: rgba(127,223,255,.06); border: 1px solid var(--border);
+    border-radius: 9px; padding: 11px 14px;
+  }
+  .su-chapter-t { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+  .su-chapter-g { font-size: 12.5px; color: var(--ok); line-height: 1.6; }
+  .su-chapter-s { font-size: 12px; color: var(--muted); line-height: 1.65; margin-top: 5px; }
+  .su-act-note {
+    margin-top: 9px; font-size: 11.5px; color: var(--accent2);
+    font-style: italic; line-height: 1.6;
+  }
+  .su-chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .su-chip {
+    font-size: 11.5px; padding: 4px 10px; border-radius: 20px;
+    background: rgba(90,120,180,.12); border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .su-chip.on { background: rgba(110,231,168,.14); border-color: rgba(110,231,168,.32); color: var(--ok); }
+
+  .su-lore {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 7px 0; border-bottom: 1px solid rgba(90,120,180,.12);
+    opacity: .5;
+  }
+  .su-lore.on { opacity: 1; }
+  .su-lore-i { font-size: 16px; width: 20px; text-align: center; flex: none; }
+  .su-lore-body { min-width: 0; }
+  .su-lore-t { font-size: 12.5px; font-weight: 500; color: var(--text); }
+  .su-lore-b { font-size: 11.5px; color: var(--muted); line-height: 1.55; margin-top: 2px; }
+
+  .su-prog { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 12px; }
+  .su-prog-n { width: 110px; flex: none; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .su-prog-bar {
+    flex: 1 1 auto; height: 5px; border-radius: 3px;
+    background: rgba(90,120,180,.2); overflow: hidden;
+  }
+  .su-prog-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s ease; }
+  .su-prog-v { width: 44px; flex: none; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .su-two { display: flex; gap: 20px; }
+  .su-two .su-sec { flex: 1 1 0; }
+
+  /* ── 结局 ── */
+  .su-ending {
+    position: fixed; inset: 0; z-index: 95;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(8,10,16,.9) 0%, rgba(4,5,9,.99) 75%);
+    opacity: 0; transition: opacity .8s ease; padding: 24px;
+  }
+  .su-ending.on { opacity: 1; }
+  .su-end-box {
+    width: min(620px, 92vw); text-align: center;
+    border: 1px solid var(--border); border-radius: 16px;
+    padding: 30px 32px; background: rgba(13,17,28,.7);
+    backdrop-filter: blur(10px);
+  }
+  .su-end-kind {
+    font-size: 12px; letter-spacing: 5px; color: var(--accent2);
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+  .su-end-title {
+    font-size: 31px; font-weight: 700; letter-spacing: 2px;
+    color: #eef4ff; margin-bottom: 18px;
+    text-shadow: 0 2px 26px rgba(127,223,255,.35);
+  }
+  .su-end-text {
+    font-size: 14px; line-height: 1.95; color: var(--muted);
+    white-space: pre-wrap; text-align: left; margin-bottom: 22px;
+    max-height: 34vh; overflow-y: auto;
+  }
+  .su-end-stats {
+    display: flex; flex-direction: column; gap: 1px;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    padding: 12px 0; margin-bottom: 22px;
+  }
+  .su-end-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 4px; }
+  .su-end-row span { color: var(--muted); }
+  .su-end-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .su-end-btn {
+    font-family: inherit; font-size: 13.5px; font-weight: 600;
+    color: var(--text); cursor: pointer;
+    background: linear-gradient(135deg, rgba(127,223,255,.24), rgba(169,123,255,.24));
+    border: 1px solid rgba(127,223,255,.45);
+    border-radius: 10px; padding: 10px 30px;
+    transition: all .16s ease;
+  }
+  .su-end-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(127,223,255,.28); }
+
+  /* ══════════════════════════════════════════════════════════
+     手机端适配
+     ── 设计约束：
+        · 所有覆盖都包在 (pointer:coarse)/(hover:none) 或窄屏媒体查询里，
+          桌面端（鼠标）观感**完全不变**；
+        · 只叠加「安全区 padding / 动态视口高度 / 命中区尺寸 / 竖屏提示」，
+          **不动**任何 z-index（60/70/80/95）与 opacity 过渡语义。
+     ══════════════════════════════════════════════════════════ */
+
+  /* 可滚动区域必须显式放行纵向手势 —— 触摸设备上 body 的 touch-action
+     会连带限制子元素，不显式放行的话面板里划不动。
+     （与 2D 侧 shell.html:1254 是同一个坑） */
+  .su-box, .su-panel-body, .su-end-text {
+    touch-action: pan-y; -webkit-overflow-scrolling: touch;
+  }
+
+  @media (pointer: coarse), (hover: none) {
+    /* 触摸设备：禁掉页面级手势（滚动 / 双指缩放 / 双击缩放），交给游戏自己处理。
+       子元素里真正需要滚动的那几个，上面已经单独放行 pan-y。 */
+    html, body { touch-action: none; }
+
+    /* ── 安全区：让固定定位的 HUD / 叙事层避开刘海、圆角、Home 指示条 ── */
+    #hud {
+      padding: calc(14px + var(--sat)) calc(16px + var(--sar))
+               calc(14px + var(--sab)) calc(16px + var(--sal));
+    }
+    .hud-buildbar { bottom: calc(44px + var(--sab)); }
+    .hud-toast { bottom: calc(152px + var(--sab)); }
+    .hud-panel {
+      top: calc(74px + var(--sat)); right: calc(16px + var(--sar));
+      /* 选中面板在矮屏上会顶到底部：给它一个可滚动的上限 */
+      max-height: calc(100dvh - 74px - 120px - var(--sat) - var(--sab));
+      overflow-y: auto;
+    }
+    .su-toasts { top: calc(70px + var(--sat)); right: calc(16px + var(--sar)); }
+    .su-dialog {
+      padding: 0 calc(16px + var(--sar)) calc(34px + var(--sab)) calc(16px + var(--sal));
+    }
+    .su-media {
+      padding: calc(24px + var(--sat)) calc(24px + var(--sar))
+               calc(190px + var(--sab)) calc(24px + var(--sal));
+    }
+    .su-panel {
+      padding: calc(26px + var(--sat)) calc(26px + var(--sar))
+               calc(26px + var(--sab)) calc(26px + var(--sal));
+    }
+    .su-ending {
+      padding: calc(24px + var(--sat)) calc(24px + var(--sar))
+               calc(24px + var(--sab)) calc(24px + var(--sal));
+    }
+    .su-act {
+      padding: calc(24px + var(--sat)) calc(24px + var(--sar))
+               calc(24px + var(--sab)) calc(24px + var(--sal));
+    }
+
+    /* ── 宽度上限：把 vw 换成「受安全区约束的可用宽度」 ──
+       这些卡片原来的 min(Npx, Nvw) 用的是视口宽，**不含**左右刘海。
+       它们的父层已经加了 sal/sar 的 padding，所以用 100%（= 父层内容宽）
+       就是正确的可用宽度，既不会压刘海，也不会在无刘海设备上变小。 */
+    .hud-toast { max-width: calc(100vw - var(--sal) - var(--sar) - 32px); }
+    .su-box { width: min(760px, 100%); }
+    .su-media-stage { width: min(880px, 100%); }
+    .su-panel-head, .su-panel-body { width: min(880px, 100%); }
+    .su-end-box { width: min(620px, 100%); }
+
+    /* ── 动态视口：地址栏收展时高度不跳变、内容不被裁 ──
+       （dvh 不支持时自动沿用上面写死的 vh） */
+    .su-box { max-height: 52dvh; }
+    .su-media-stage { max-height: 52dvh; }
+    .su-panel-body { max-height: 68dvh; }
+    .su-end-text { max-height: 34dvh; }
+
+    /* ── 命中区：所有可点控件 ≥44px（拇指目标） ── */
+    .hud-btn { min-height: 44px; padding: 8px 14px; }
+    .hud-btn--sound { min-width: 44px; }
+    .hud-btn--speed { min-width: 52px; }
+    .build-btn { min-height: 48px; }
+    .su-choice { min-height: 44px; padding: 11px 14px; }
+    .su-end-btn { min-height: 46px; }
+    .su-panel-close { width: 44px; height: 44px; }
+
+    /* 顶栏在手机上更紧凑，避免把战场压扁 */
+    .hud-bar { gap: 8px; padding: 8px 12px; }
+    .hud-stats { gap: 5px; }
+    /* 控件行默认 nowrap：4 个按钮在 390px 竖屏上排一行宽 407px，
+       会横向溢出视口。放行换行 + 允许收缩，让子孙可视矩形都不出屏。 */
+    .hud-controls { gap: 6px; flex-wrap: wrap; min-width: 0; }
+    .hud-controls .hud-btn { flex: 0 1 auto; min-width: 0; }
+
+    /* 手机上毛玻璃很吃 GPU：降低最密集几层的模糊半径（观感几乎无差别） */
+    .hud-bar, .hud-buildbar, .hud-panel, .hud-toast,
+    .su-box, .su-toast, .su-panel-head, .su-panel-body {
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+  }
+
+  /* 窄横屏（手机横持）：压缩 HUD 垂直占用，把屏幕还给战场。
+     命中区仍保持 44px 不缩水。 */
+  @media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+    #hud { padding-top: calc(8px + var(--sat)); padding-bottom: calc(8px + var(--sab)); }
+    .hud-bar { padding: 6px 10px; gap: 6px; }
+    .hud-title { font-size: 13px; }
+    .hud-stat { font-size: 11.5px; padding: 3px 8px; }
+    .hud-btn { min-height: 44px; font-size: 12px; padding: 6px 11px; }
+
+    /* 建造栏：17 个按钮在 844×390 这类矮横屏上折成 4 行、高达 278px，
+       直接盖住战场。改成**单行横向滚动**，高度回到 ~74px。
+       ⚠️ 溢出滚动时必须用 flex-start：justify-content:center 会让
+          最左边几个按钮被裁掉且滚不回来（flexbox 的经典坑）。 */
+    .hud-buildbar {
+      bottom: calc(40px + var(--sab)); padding: 6px 8px;
+      /* ⚠️ 宽度必须扣掉左右安全区：它是 position:fixed + left:50%/translateX(-50%)，
+         不吃 #hud 的 padding。横屏刘海 left/right=47px 时，94vw=793px 会让两边
+         各压进刘海 ~22px。用 100vw - sal - sar - 16px 得到真正的可用宽度，
+         同时保留居中语义（桌面 / 无刘海设备上 env=0，结果与 94vw 一致）。 */
+      width: min(1180px, calc(100vw - var(--sal) - var(--sar) - 16px));
+      flex-wrap: nowrap; justify-content: flex-start;
+      overflow-x: auto; overflow-y: hidden;
+      touch-action: pan-x; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .hud-buildbar::-webkit-scrollbar { display: none; }
+    .build-btn { min-height: 44px; min-width: 56px; flex: 0 0 auto; }
+
+    /* 底栏压成一行，给建造栏腾高度 —— 否则两者在 390px 屏上叠在一起 */
+    .hud-footer { flex-direction: row; flex-wrap: nowrap; gap: 6px; font-size: 11px; }
+    .hud-footer span { max-width: 47vw; }
+
+    .hud-toast { bottom: calc(130px + var(--sab)); }
+    .su-media { padding-bottom: calc(150px + var(--sab)); }
+
+    /* 结局卡：默认 padding 30px + 31px 标题 + 34vh 正文 + 5 行数据，
+       在 390px 高的横屏上会撑到 ~509px，上下都被裁。
+       压紧内边距并给一个可滚动的上限，保证整卡始终落在视口内。 */
+    .su-end-box {
+      padding: 16px 20px;
+      max-height: calc(100dvh - 16px - var(--sat) - var(--sab));
+      overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch;
+    }
+    .su-end-kind { margin-bottom: 6px; letter-spacing: 3px; }
+    .su-end-title { font-size: 22px; margin-bottom: 10px; }
+    .su-end-text { max-height: 26dvh; margin-bottom: 12px; }
+    .su-end-stats { padding: 8px 0; margin-bottom: 12px; }
+    .su-end-btn { padding: 8px 24px; }
+  }
+
+  /* ── 竖屏提示 ──
+     游戏主场景是横屏。手机竖持时给一张提示卡：**纯 CSS 判定**，
+     不锁方向、不需要 JS；转回横屏后媒体查询自动失效，提示消失。
+     用 CSS 画一个手机图标，避免额外资源。 */
+  #rotate-hint { display: none; }
+  @media (orientation: portrait) and (pointer: coarse) and (max-width: 900px) {
+    #rotate-hint {
+      position: fixed; inset: 0; z-index: 200;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; text-align: center;
+      padding: calc(26px + var(--sat)) calc(26px + var(--sar))
+               calc(26px + var(--sab)) calc(26px + var(--sal));
+      background: radial-gradient(ellipse at center, rgba(12,10,26,.97) 0%, rgba(4,5,9,.995) 100%);
+    }
+    #rotate-hint .rh-ico {
+      width: 46px; height: 78px; border: 3px solid var(--accent); border-radius: 10px;
+      position: relative; box-shadow: 0 0 24px rgba(127,223,255,.35);
+      animation: rhTilt 2.4s ease-in-out infinite;
+    }
+    #rotate-hint .rh-ico i {
+      position: absolute; left: 50%; bottom: 7px; width: 18px; height: 3px;
+      border-radius: 2px; background: var(--accent); transform: translateX(-50%);
+    }
+    #rotate-hint h3 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .5px; color: var(--accent); }
+    #rotate-hint p { margin: 0; max-width: 330px; font-size: 13px; line-height: 1.75; color: var(--muted); }
+  }
+  @keyframes rhTilt { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(16deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    #rotate-hint .rh-ico { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="hud"></div>
+  <!-- 竖屏提示：纯 CSS 媒体查询控制显隐（竖屏 + 触摸 + 窄屏才出现），无 JS、不锁方向 -->
+  <div id="rotate-hint" aria-hidden="true">
+    <div class="rh-ico"><i></i></div>
+    <h3>请横屏游玩</h3>
+    <p>《躺平发育：梦魇防线》3D 是一片横向战场，请把手机转成横屏，才能看到完整的防线与建造栏。</p>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

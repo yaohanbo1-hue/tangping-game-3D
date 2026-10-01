@@ -1,0 +1,80 @@
+# ============================================================
+#  部署到 GitHub Pages
+# ============================================================
+#
+#  为什么用 Actions 而不是把 dist/ 提交进仓库：
+#
+#    · 提交构建产物会造成「谁是真相」的歧义 —— 源码改了但忘了重建，
+#      线上还是旧的，而且**看不出来**。
+#    · 这个工程的构建很轻（Vite + three，约 5 秒），CI 里重建完全够快。
+#    · 顺带能在部署前跑一遍无头验收，挡住明显坏掉的提交。
+#
+#  首次部署后，需要在仓库 Settings → Pages 里把 Source 设为
+#  「GitHub Actions」（本工作流第一次成功运行后通常会自动设置）。
+# ============================================================
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages 部署需要的最小权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署；新的推送取消排队中的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 素材缺失时游戏会「静默退回纯文字」—— 不会报错，但线上就是没镜头。
+      # 所以在构建前先拦住它。
+      - name: Check story media
+        run: npm run check:media
+
+      # 无头验收：坐标契约 / 架构边界 / 规则一致性 / 战斗链路 / 叙事节奏 / 结局
+      # 这几套是纯 Node，不需要浏览器，秒级完成。
+      - name: Headless verification
+        run: npm run verify
+
+      - name: Build
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
